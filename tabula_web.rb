@@ -165,6 +165,10 @@ Cuba.define do
                                         req.params['y2'])
       text_elements = Tabula::Graph.merge_text_elements(text_elements)
 
+      require 'debugger'; debugger
+
+      ll = Tabula::Line.find_lines(text_elements)
+
       res['Content-Type'] = 'application/json'
       res.write Tabula::Graph::Graph.make_graph(text_elements).to_json
 

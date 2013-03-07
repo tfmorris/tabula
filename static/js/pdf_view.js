@@ -48,7 +48,7 @@ $(function () {
 
 
     debugGraph = function(image) {
-    image = $(image);
+        image = $(image);
         var imagePos = image.offset();
         var newCanvas =  $('<canvas/>',{'class':'debug-canvas'})
             .attr('width', image.width())
@@ -76,14 +76,55 @@ $(function () {
               lastQuery,
               function(data) {
                   // draw rectangles enclosing each cluster
-                  $.each(data.vertices, function(i, row) {
-                      $(newCanvas).drawRect({
-                          x: lastSelection.x1,
-                          y: row.top * scale_y,
-                          width: lastSelection.x2 - lastSelection.x1,
-                          height: row.bottom - row.top,
-                          strokeStyle: COLORS[i % COLORS.length],
+                  $.each(data.vertices, function(cluster_id, cluster) {
+                      var rect = {
+                          x: cluster.left * scale,
+                          y: cluster.top * scale,
+                          width: cluster.width * scale,
+                          height: cluster.height * scale,
+                          strokeStyle: '#00FFEF',
                           fromCenter: false
+                      };
+                      $(newCanvas).drawRect(rect);
+                      cluster.drawnRect = rect; // save for later
+                  });
+
+                  $.each(data.edges, function(i, edges) {
+                      $.each(edges, function(i, edge) {
+                          var line = { strokeWidth: 1, strokeStyle: '#000'};
+                          var fromRect = data.vertices[edge.from_id].drawnRect;
+                          var toRect = data.vertices[edge.to_id].drawnRect;
+                          switch (edge.direction) {
+                          case 'above':
+                              $.extend(line, {
+                                  x1: fromRect.x + fromRect.width / 2,
+                                  y1: fromRect.y,
+                                  x2: fromRect.x + fromRect.width / 2,
+                                  y2: toRect.y + toRect.height
+                              });
+                              break;
+                          case 'below':
+                              // $.extend(line, {
+                              //     x1: fromRect.x + fromRect.width / 2,
+                              //     y1: fromRect.y + fromRect.height,
+                              //     x2: fromRect.x + fromRect.width / 2,
+                              //     y2: toRect.y
+                              // });
+                              break;
+                          case 'left':
+//                              console.log('left ' + (fromRect.x >= toRect.x) + ' <"' + edge.from.text + '"(' + fromRect.x + ')> <"' + edge.to.text + '"(' + toRect.x+')>');
+                              $.extend(line, {
+                                  x1: fromRect.x,
+                                  y1: fromRect.y + fromRect.height / 2,
+                                  x2: toRect.x + toRect.width,
+                                  y2: fromRect.y + fromRect.height / 2
+                              });
+                              break
+                          case 'right':
+                              break
+                          }
+                          $(newCanvas).drawLine(line);
+
                       });
                   });
 

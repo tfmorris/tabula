@@ -1,8 +1,9 @@
+require_relative './core_ext.rb'
+
 module Tabula
   # TextElement, Line and Column should all include this Mixin
   class ZoneEntity
     attr_accessor :top, :left, :width, :height
-
     attr_accessor :texts
 
     def initialize(top, left, width, height)
@@ -11,6 +12,16 @@ module Tabula
       self.width = width
       self.height = height
       self.texts = []
+
+      # refine texts#<< so, as a side-effect, clears our caches
+      # TODO maybe a bit too fancy?
+      parent = self
+      self.texts.define_singleton_method(:<<, proc { |arg|
+                                           self.push(arg)
+                                           # clear caches
+                                           parent.instance_variable_set(:@font_size, nil)
+                                           parent.instance_variable_set(:@lines, nil)
+                                         })
     end
 
     def bottom
@@ -20,6 +31,12 @@ module Tabula
     def right
       self.left + self.width
     end
+
+    alias_method :y1, :bottom
+    alias_method :y2, :top
+    alias_method :x1, :left
+    alias_method :x2, :right
+
 
     # [x, y]
     def midpoint
@@ -42,20 +59,72 @@ module Tabula
     end
 
     # Roughly, detects if self and other belong to the same line
-    def vertically_overlaps?(other)
-      (other.top == self.top) or
-        (other.top.between?(self.top, self.bottom) and self.bottom.between?(other.top, other.bottom)) or
-        (self.top.between?(other.top, other.bottom) and other.bottom.between?(self.top, self.bottom)) or
-        (self.top.between?(other.top, other.bottom) and self.bottom.between?(other.top, other.bottom)) or
-        (other.top.between?(self.top, self.bottom)  and other.bottom.between?(self.top, self.bottom))
+    # optionally, check if overlap is above +minimum_overlap+
+    def vertically_overlaps?(other, minimum_overlap=nil)
+      overlaps = ((other.top == self.top) or \
+        (other.top.between?(self.top, self.bottom) and self.bottom.between?(other.top, other.bottom)) or \
+        (self.top.between?(other.top, other.bottom) and other.bottom.between?(self.top, self.bottom)) or \
+        (self.top.between?(other.top, other.bottom) and self.bottom.between?(other.top, other.bottom)) or \
+        (other.top.between?(self.top, self.bottom)  and other.bottom.between?(self.top, self.bottom)))
+
+      if !minimum_overlap.nil?
+        # TODO implement overlap percent check
+      end
+
+      return overlaps
+
     end
 
     # detects if self and other belong to the same column
-    def horizontally_overlaps?(other)
-      (self.left.between?(other.left, other.right) and self.right.between?(other.left, other.right)) or
-        self.left.between?(other.left, other.right) or
-        self.right.between?(other.left, other.right) or
-        (other.right.between?(self.left, self.right) and other.left.between?(self.left, self.right))
+    # optionally, check if overlap is above +minimum_overlap+
+    def horizontally_overlaps?(other, minimum_overlap=nil)
+      overlaps = ((self.left.between?(other.left, other.right) and self.right.between?(other.left, other.right)) or \
+        self.left.between?(other.left, other.right) or \
+        self.right.between?(other.left, other.right) or \
+        (other.right.between?(self.left, self.right) and other.left.between?(self.left, self.right)))
+
+      if !minimum_overlap.nil?
+        # TODO implement overlap percent check
+      end
+
+      return overlaps
+    end
+
+    def lines
+      @lines ||= Line.find_lines(self.texts.flatten)
+    end
+
+    ##
+    # avg line spacing between the lines in this ZoneEntity (or cluster)
+    def line_spacing
+
+      return @line_spacing unless @line_spacing.nil?
+
+      als = 0
+      prev_line = nil
+
+      self.lines.each do |l|
+        afs += l.font_size
+
+        if prev_line.nil?
+          als += prev_line.y1 - l.y1
+        end
+        prev_line = l
+      end
+
+      afs = afs / self.lines..size
+      als = als / (self.lines.size - 1)
+
+      @line_spacing = als / afs
+
+    end
+
+    ##
+    # avg font size across all texts in this ZoneEntity
+    def font_size
+      @font_size ||= self.texts.inject(0) { |sum, t|
+        sum + t.font_size
+      } / self.texts.size
     end
 
     def to_h
@@ -69,6 +138,7 @@ module Tabula
     def to_json(options={})
       self.to_h.to_json
     end
+
   end
 
   class TextElement < ZoneEntity
@@ -81,6 +151,25 @@ module Tabula
       self.font = font
       self.font_size = font_size
       self.text = text
+    end
+
+    def same_line?(other, ignore_font_size=false)
+      font_size = (self.font_size + other.font_size) / 2
+      same_font_size = other.font_size.within(self.font_size, font_size * 0.15)
+#      guard = other.right(this.left, font_size * )
+      if ignore_font_size
+        same_font_size = true
+      end
+      other.y1.within(self.y1, font_size * 0.3) and same_font_size
+    end
+
+    def average_font_size(other)
+      (self.font_size + other.font_size) / 2
+    end
+
+    def same_font_size?(other, tolerance=0.1)
+      self.font_size.within(other.font_size,
+                            self.average_font_size(other) * tolerance)
     end
 
     def should_merge?(other)
@@ -113,13 +202,14 @@ module Tabula
 
 
   class Line < ZoneEntity
-    # TODO clean this up
     attr_accessor :text_elements
 
     def initialize
       self.text_elements = []
     end
 
+    ##
+    # add a TextElement to this Line
     def <<(t)
       self.text_elements << t
       if self.text_elements.size == 1
@@ -132,7 +222,68 @@ module Tabula
       end
     end
 
+    ##
+    # find lines in a list of TextElement
+    # class method
+    def self.find_lines(text_elements)
+      text_elements = text_elements.sort { |obj1, obj2|
+        x1, y1, x2, y2 = obj1.x1, obj1.y1, obj2.x1, obj2.y1
+
+        tolerance = (obj1.font_size + obj2.font_size) * 0.3
+
+        if y1.within(y2, tolerance)
+          x1 - x2
+        else
+          y2 - y1
+        end
+      }
+
+      retval = []; last_block = nil; new_items = []; merge = false
+      text_elements.each do |te|
+        this_block = te
+
+        if this_block.nil? or this_block.text.empty?
+          next
+        end
+
+        if !last_block.nil?
+          if last_block.same_line?(this_block)
+            if merge
+              new_items << this_block
+            else
+              new_items = [this_block]
+              merge = true
+            end
+          else # don't merge
+            new_line = Line.new()
+            new_items.each { |ni| new_line << ni }
+            retval << new_line
+
+            new_items = []
+            new_items << this_block
+            merge = true
+          end
+        else
+          new_items = []
+          new_items << this_block
+          merge = true
+        end
+
+        last_block = this_block
+      end
+
+      unless new_items.empty?
+        new_line = Line.new
+        new_items.each { |ni| new_line << ni }
+      end
+
+      return retval
+
+    end
+
   end
+
+
 
   class Column < ZoneEntity
     attr_accessor :text_elements
@@ -292,7 +443,7 @@ module Tabula
 
       columns.sort_by(&:left).each_with_index do |c, i|
         if (i > l.text_elements.size - 1) or !l.text_elements(&:left)[i].nil? and !c.text_elements.include?(l.text_elements[i])
-          l.text_elements.insert(i, TextElement.new(l.top, c.left, c.width, l.height, nil, ''))
+          l.text_elements.insert(i, TextElement.new(l.top, c.left, c.width, l.height, nil, 1, ''))
         end
       end
     }
