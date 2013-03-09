@@ -91,7 +91,7 @@ $(function () {
 
                   $.each(data.edges, function(i, edges) {
                       $.each(edges, function(i, edge) {
-                          var line = { strokeWidth: 1, strokeStyle: '#000'};
+                          var line = { strokeWidth: 1, strokeStyle: '#ff0000'};
                           var fromRect = data.vertices[edge.from_id].drawnRect;
                           var toRect = data.vertices[edge.to_id].drawnRect;
                           switch (edge.direction) {

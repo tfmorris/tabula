@@ -6,11 +6,7 @@ module Tabula
     attr_accessor :top, :left, :width, :height
     attr_accessor :texts
 
-    def initialize(top, left, width, height)
-      self.top = top
-      self.left = left
-      self.width = width
-      self.height = height
+    def initialize(*args)
       self.texts = []
 
       # refine texts#<< so, as a side-effect, clears our caches
@@ -18,10 +14,13 @@ module Tabula
       parent = self
       self.texts.define_singleton_method(:<<, proc { |arg|
                                            self.push(arg)
-                                           # clear caches
-                                           parent.instance_variable_set(:@font_size, nil)
-                                           parent.instance_variable_set(:@lines, nil)
+                                           parent.merge!(arg)
                                          })
+
+      if args.size == 4
+        self.top, self.left, self.width, self.height = args
+      end
+
     end
 
     def bottom
@@ -37,17 +36,27 @@ module Tabula
     alias_method :x1, :left
     alias_method :x2, :right
 
-
     # [x, y]
     def midpoint
       [self.left + (self.width / 2), self.top + (self.height / 2)]
     end
 
     def merge!(other)
-      self.top    = [self.top, other.top].min
-      self.left   = [self.left, other.left].min
-      self.width  = [self.right, other.right].max - left
-      self.height = [self.bottom, other.bottom].max - top
+      if self.texts.size == 1
+        self.top = other.top
+        self.left = other.left
+        self.width = other.width
+        self.height = other.height
+      else
+        self.top    = [self.top, other.top].min
+        self.left   = [self.left, other.left].min
+        self.width  = [self.right, other.right].max - left
+        self.height = [self.bottom, other.bottom].max - top
+      end
+      # clear caches
+      @fs = nil
+      @lines = nil
+      @line_spacing = nil
     end
 
     def horizontal_distance(other)
@@ -97,7 +106,6 @@ module Tabula
     ##
     # avg line spacing between the lines in this ZoneEntity (or cluster)
     def line_spacing
-
       return @line_spacing unless @line_spacing.nil?
 
       als = 0
@@ -122,9 +130,30 @@ module Tabula
     ##
     # avg font size across all texts in this ZoneEntity
     def font_size
-      @font_size ||= self.texts.inject(0) { |sum, t|
+      @fs ||= self.texts.inject(0) { |sum, t|
         sum + t.font_size
       } / self.texts.size
+    end
+
+    def valid_cluster?
+      clashing_lines = false
+      prev_line = nil
+
+      self.lines.each do |l|
+        unless prev_line.nil?
+          line_spacing = (prev_line.y1 - l.y1) / self.font_size
+          clashing_lines = prev_line.vertically_overlaps?(l)
+
+          if !line_spacing.within(self.line_spacing, LINE_SPACING_TOLERANCE)
+            return false
+          end
+        end
+        prev_line = l
+      end
+
+      # TODO here implement checkForChasms
+      return true
+
     end
 
     def to_h
@@ -154,13 +183,13 @@ module Tabula
     end
 
     def same_line?(other, ignore_font_size=false)
-      font_size = (self.font_size + other.font_size) / 2
-      same_font_size = other.font_size.within(self.font_size, font_size * 0.15)
-#      guard = other.right(this.left, font_size * )
+      fs = (self.font_size + other.font_size) / 2
+      same_font_size = other.font_size.within(self.font_size, fs * 0.15)
+#      guard = other.right(this.left, fs * )
       if ignore_font_size
         same_font_size = true
       end
-      other.y1.within(self.y1, font_size * 0.3) and same_font_size
+      other.y1.within(self.y1, fs * 0.3) and same_font_size
     end
 
     def average_font_size(other)
@@ -170,6 +199,10 @@ module Tabula
     def same_font_size?(other, tolerance=0.1)
       self.font_size.within(other.font_size,
                             self.average_font_size(other) * tolerance)
+    end
+
+    def font_size
+      @font_size
     end
 
     def should_merge?(other)
@@ -204,22 +237,10 @@ module Tabula
   class Line < ZoneEntity
     attr_accessor :text_elements
 
-    def initialize
-      self.text_elements = []
-    end
-
     ##
     # add a TextElement to this Line
     def <<(t)
-      self.text_elements << t
-      if self.text_elements.size == 1
-        self.top = t.top
-        self.left = t.left
-        self.width = t.width
-        self.height = t.height
-      else
-        self.merge!(t)
-      end
+      self.texts << t
     end
 
     ##

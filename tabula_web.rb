@@ -149,9 +149,6 @@ Cuba.define do
 
     on "pdf/:file_id/rulings" do |file_id|
       lines = Tabula::Rulings::detect_rulings(File.join(Dir.pwd, "static/pdfs/#{file_id}/document_2048_#{req.params['page']}.png"))
-      # File.open('/tmp/rulings.marshal', 'w') do |f|
-      #   f.write(Marshal.dump(lines))
-      # end
       res['Content-Type'] = 'application/json'
       res.write lines.to_json
     end
@@ -165,13 +162,19 @@ Cuba.define do
                                         req.params['y2'])
       text_elements = Tabula::Graph.merge_text_elements(text_elements)
 
-      require 'debugger'; debugger
 
-      ll = Tabula::Line.find_lines(text_elements)
+      graph = Tabula::Graph::Graph.make_graph(text_elements)
+
+#      require 'debugger'; debugger
+#      ct = graph.cluster_together(graph.edges[graph.edges.keys.first].first, nil, nil)
+
+      puts graph.edges.inject([]) { |a, (k, v)| puts v.class.inspect; a + v }
+        .uniq
+        .select { |a| graph.cluster_together(a, nil, nil) }
+        .each { |e| puts "#{e.from.text.inspect} <-> #{e.to.text.inspect}"}
 
       res['Content-Type'] = 'application/json'
-      res.write Tabula::Graph::Graph.make_graph(text_elements).to_json
-
+      res.write graph.to_json
     end
 
     on "pdf/:file_id" do |file_id|

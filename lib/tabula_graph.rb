@@ -1,8 +1,11 @@
+require 'ostruct'
+
 ## Approach inspired in "Object-Level Analysis of PDF Files" (Tamir Hassan)
 module Tabula
 
   MAX_CLUST_LINE_SPACING = 1.75 # 5524.pdf i-cite
   MIN_CLUST_LINE_SPACING = 0.25 # Baghdad problem! 30.07.08
+  LINE_SPACING_TOLERANCE = 0.05
 
   module Graph
     class Edge
@@ -18,13 +21,13 @@ module Tabula
       def physical_length
         case self.direction
         when :left
-          self.from.x1 - self.to.x2
+          self.from.left - self.to.right
         when :right
-          self.to.x1 - self.from.x2
+          self.to.left - self.from.right
         when :above
-          self.to.y1 - self.from.y2
+          self.from.top - self.to.bottom
         when :below
-          self.from.y1 - self.to.y2
+          self.to.top - self.from.bottom
         end
       end
 
@@ -192,43 +195,48 @@ module Tabula
 
         if edge.horizontal?
           if cluster_from.nil?
-
+            cluster_from = Tabula::ZoneEntity.new
+            cluster_from.texts << text_from
           end
 
           if cluster_to.nil?
-
+            cluster_to = Tabula::ZoneEntity.new
+            cluster_to.texts << text_from # TODO is this a bug in TextBlockSegmentation.java?
           end
 
-          if clust_from == clust_to
+          if cluster_from == cluster_to
             return false
           end
 
-          neighbours_from = [self.edges[text_from]
-                               .select { |t| e.direction == :above }
-                               .sort_by { |e| e.midpoint[1] }
-                               .last[:to],  # lowest neighbour above
-                             self.edges[text_from]
-                               .select { |t| e.direction == :below }
-                               .sort_by { |e| e.midpoint[1] }
-                               .first[:to] # highest neighbour below
+          # awful boolean trickery ahead (to avoid writing even more nested ifs)
+          # TODO move inside new method. maybe graph.edges.closest_neighbour(direction) ??
+          stub = OpenStruct.new({:to => nil})
+          neighbours_from = [((self.edges[text_from]
+                                 .select { |e| e.direction == :above } or [])
+                                .sort_by { |e| e.to.midpoint[1] }
+                                .last or stub).to,  # lowest neighbour above
+                             ((self.edges[text_from]
+                                 .select { |e| e.direction == :below } or [])
+                                .sort_by { |e| e.to.midpoint[1] }
+                                .first or stub).to # highest neighbour below
                             ]
 
-          neighbours_to = [self.edges[text_to]
-                             .select { |t| e.direction == :above }
-                             .sort_by { |e| e.midpoint[1] }
-                             .last[:to], # lowest neighbour above
-                           self.edges[text_from]
-                             .select { |t| e.direction == :below }
-                             .sort_by { |e| e.midpoint[1] }
-                             .first[:to]  # highest neighbour below
+          neighbours_to = [((self.edges[text_to]
+                               .select { |e| e.direction == :above } or [])
+                              .sort_by { |e| e.to.midpoint[1] }
+                              .last or stub).to, # lowest neighbour above
+                           ((self.edges[text_from]
+                             .select { |e| e.direction == :below } or [])
+                              .sort_by { |e| e.to.midpoint[1] }
+                              .first or stub).to # highest neighbour below
                           ]
 
           closest_neighbour_from = closest_neighbour_to = nil
 
           # find closest neighbour of 'from' vertex
           if !neighbours_from[0].nil? and !neighbours_from[1].nil?
-            distance_above = neighbours_from[0].top - text_from.bottom
-            distance_below = text_from.top - neighbours_from[1].bottom
+            distance_above = neighbours_from[0].y1 - text_from.y2
+            distance_below = text_from.y1 - neighbours_from[1].y2
             closest_neighbour_from = if distance_above < distance_below
                                        neighbours_from[0]
                                      else
@@ -240,10 +248,10 @@ module Tabula
             closest_neighbour_from = neighbours_from[1]
           end
 
-          # find closes neighbour of 'to' vertex
+          # find closest neighbour of 'to' vertex
           if !neighbours_to[0].nil? and !neighbours_to[1].nil?
-            distance_above = neighbours_to[0].top - text_to.bottom
-            distance_below = text_to.top - neighbours_to[1].bottom
+            distance_above = neighbours_to[0].y1 - text_to.y2
+            distance_below = text_to.y1 - neighbours_to[1].y2
             closest_neighbour_to = if distance_above < distance_below
                                        neighbours_to[0]
                                      else
@@ -258,16 +266,16 @@ module Tabula
           # find closest neighbour
           closest_neighbour = nil; neighbour_distance = -1;
           if !closest_neighbour_from.nil? and !closest_neighbour_to.nil?
-            distance_from = if closest_neighbour_from.midpoint[1] - text_from.midpoint[]
-                              text_from.top - closest_neighbour_from.bottom
+            distance_from = if closest_neighbour_from.midpoint[1] - text_from.midpoint[1]
+                              text_from.y1 - closest_neighbour_from.y2
                             else
-                              closest_neighbour_from.top - text_from.bottom
+                              closest_neighbour_from.y1 - text_from.y2
                             end
 
             distance_to = if closest_neighbour_to.midpoint[1] < text_to.midpoint[1]
-                            text_to.top - closest_neighbour_to.bottom
+                            text_to.y1 - closest_neighbour_to.y2
                           else
-                            closest_neighbour_to.top - text_to.bottom
+                            closest_neighbour_to.y1 - text_to.y2
                           end
 
             closest_neighbour, neighbour_distance = if distance_from < distance_to
@@ -278,31 +286,31 @@ module Tabula
           elsif !closest_neighbour_from.nil?
             closest_neighbour = closest_neighbour_from
             distance_from = if closest_neighbour_from.midpoint[1] < text_from.midpoint[1]
-                              text_from.top - closest_neighbour_from.bottom
+                              text_from.y1 - closest_neighbour_from.y2
                             else
-                              closest_neighbour_from.top - text_from.bottom
+                              closest_neighbour_from.y1 - text_from.y2
                             end
             neighbour_distance = distance_from
           elsif !closest_neighbour_to.nil?
             closest_neighbour = closest_neighbour_to
             distance_to = if closest_neighbour_to.midpoint[1] < text_to.midpoint[1]
-                              text_to.top - closest_neighbour_to.bottom
+                              text_to.y1 - closest_neighbour_to.y2
                             else
-                              closest_neighbour_to.top - text_to.bottom
+                              closest_neighbour_to.y1 - text_to.y2
                             end
             neighbour_distance = distance_to
           end
 
           max_horiz_edge_width = 0.75
-          if !(clust_from.lines.size <= 2 || clust_to.lines.size <= 2)
+          if !(cluster_from.lines.size <= 2 || cluster_to.lines.size <= 2)
             max_horiz_edge_width = 0.85
           end
 
-          if !(clust_from.lines.size <= 1 || clust_to.lines.size <= 1)
+          if !(cluster_from.lines.size <= 1 || cluster_to.lines.size <= 1)
             max_horiz_edge_width = 1.0
           end
 
-          same_base_line = text_fr.y1.within(seg_to.y1, [seg_from.font_size, seg_to.font_size].min * 0.2)
+          same_base_line = text_from.y1.within(text_to.y1, [text_from.font_size, text_to.font_size].min * 0.2)
           unless same_base_line
             max_horiz_edge_width = 0.3
           end
@@ -322,7 +330,6 @@ module Tabula
         end # if edge.horizontal?
 
         # here come the vertical edges
-
         line_spacing = if edge.direction == :above
                          edge.to.y1 - edge.from.y1
                        else
@@ -339,18 +346,34 @@ module Tabula
           return false
         end
 
-        if clust_from.nil? and clust_to.nil?
+        if cluster_from.nil? and cluster_to.nil?
           return true
-        elsif clust_from.nil?
-
+        elsif cluster_from.nil?
+          if cluster_to.line_spacing == 0.0 or
+              line_spacing.within(cluster_to.line_spacing, LINE_SPACING_TOLERANCE)
+            return true
+          end
+        elsif cluster_to.nil?
+          if cluster_from.line_spacing == 0.0 or
+            line_spacing.within(cluster_from.line_spacing, LINE_SPACING_TOLERANCE)
+            return true
+          end
+        else
+          if cluster_from == cluster_to
+            return false
+          end
+          same_line_spacing = cluster_from.line_spacing.within(cluster_to.line_spacing,
+                                                             LINE_SPACING_TOLERANCE)
+          return same_line_spacing && line_spacing.within(cluster_from.line_spacing, LINE_SPACING_TOLERANCE) && line_spacing.within(cluster_to.line_spacing, LINE_SPACING_TOLERANCE)
         end
 
+        return false
       end
 
       # "factory" method for graphs from a list of text_elements
       def self.make_graph(text_elements)
-        horizontal = text_elements.sort_by { |mp| mp.left }
-        vertical   = text_elements.sort_by { |mp| mp.top }
+        horizontal = text_elements.sort_by { |mp| mp.midpoint[0] }
+        vertical   = text_elements.sort_by { |mp| mp.midpoint[1] }
 
         graph = Graph.new(text_elements)
 
@@ -363,7 +386,7 @@ module Tabula
           # look for first neighbour to the left
           (hi-1).downto(0) do |i|
             if te.vertically_overlaps?(horizontal[i]) and !te.horizontally_overlaps?(horizontal[i])
-              puts "  FOUND LEFT: '#{horizontal[i].text}' (#{horizontal[i].left}, #{horizontal[i].top})"
+#              puts "  FOUND LEFT: '#{horizontal[i].text}' (#{horizontal[i].left}, #{horizontal[i].top})"
               graph.add_edge(te, horizontal[i], :left)
               break
             end
@@ -400,7 +423,101 @@ module Tabula
       end
     end
 
+    ##
+    # swallow items!
+    # 'principle of rectangular containment'
+    def self.swallow(l1, l2, items, cluster_hash)
+
+      temp = Tabula::ZoneEntity.new
+      l1.each { |l| temp.texts <<  l }; l2.each { |l| temp.texts <<  l }
+      swallowed_items = []
+      loop = true
+      while loop do
+        swallowed_items = items.select { |i|
+          i.vertically_overlaps?(temp) and i.horizontally_overlaps?(temp)
+        }
+
+        new_items = []
+
+        swallowed_items.each do |gs|
+          unless cluster_hash[gs].nil?
+            new_items += cluster_hash.texts
+          end
+        end
+
+        swallowed_items += new_items
+        swallowed_items.uniq!
+
+        if temp.texts.size == swallowed_items.texts.size
+          # list didn't grow, nothing swallowed
+          loop = false
+        end
+
+        swallowed_items.each { |si| temp.texts << si }
+      end
+
+      return swallowed_items
+
+    end
+
+    # Ported from PageSegmenter.java
     def self.ordered_edge_cluster(graph, max_iterations, cluster_hash)
+      retval = [] # list of Clusters (ZoneEntity)
+      unused_segments = [graph.vertices.sort_by(&:y1)]
+      all_segments = [graph.vertices.sort_by(&:y1)]
+      priority_edges = []
+      all_edges = []
+
+      graph.edges.each do |k, edges|
+        edges.each { |edge|
+          e = edge.clone
+          priority_edges << e
+          all_edges << e
+        }
+      end
+
+      priority_edges.sort!
+
+      while priority_edges.size > 0
+        ae = priority_edges.delete_at(0)
+
+        text_from = ae.from; text_to = ae.to
+        line_spacing = ae.length
+
+        if cluster_hash[text_from].nil? and cluster_hash[text_to].nil? and
+            graph.cluster_together(edge, nil, nil)
+          swallowed_segments = swallow([text_from], [text_to], all_segments, cluster_hash)
+
+          unless ae.vertical? or (ae.horizontal? and swallowed_segments.size <= 2)
+            next
+          end
+
+          newc = Tabula::ZoneEntity.new
+          swallowed_segments.each { |ss| newc.texts << ss }
+
+          unless newc.valid_cluster?
+            next
+          end
+
+          # TODO update hashes - WTF does this method do?
+        elsif cluster_hash[text_from].nil?
+
+        elsif cluster_hash[text_to].nil?
+        else # both segments already used, merge
+
+        end
+
+        if priority_edges.size == 0
+
+
+        end
+
+      end
+
+
+
+
+
 
     end
 
@@ -408,11 +525,16 @@ module Tabula
       current_word_index = i = 0
       char1 = text_elements[i]
 
+#      require 'debugger'; debugger
+
       while i < text_elements.size-1 do
 
         char2 = text_elements[i+1]
+        puts "#{text_elements[current_word_index].text}, #{char1}, #{char2}"
 
         next if char2.nil? or char1.nil?
+
+
 
         if text_elements[current_word_index].should_merge?(char2)
           text_elements[current_word_index].merge!(char2)
