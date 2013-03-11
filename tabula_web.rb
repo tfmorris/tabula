@@ -74,15 +74,14 @@ Cuba.define do
                                         req.params['x2'],
                                         req.params['y2'])
 
-      table = Tabula.make_table(text_elements,
-                                Settings::USE_JRUBY_ANALYZER)
+      table = Tabula.make_table(text_elements)
 
       if req.params['split_multiline_cells'] == 'true'
         table = Tabula.merge_multiline_cells(table)
       end
 
       line_texts = table.map { |line|
-        line.text_elements.sort_by { |t| t.left }
+        line.texts.sort_by { |t| t.left }
       }
 
       if req.params['format'] == 'csv'
@@ -110,8 +109,7 @@ Cuba.define do
                                         req.params['y2'])
 
       res['Content-Type'] = 'application/json'
-      res.write Tabula.get_columns(text_elements,
-                              Settings::USE_JRUBY_ANALYZER).to_json
+      res.write Tabula.get_columns(text_elements, true).to_json
 
     end
 
@@ -123,7 +121,7 @@ Cuba.define do
                                         req.params['x2'],
                                         req.params['y2'])
 
-      rows = Tabula.get_rows(text_elements, Settings::USE_JRUBY_ANALYZER)
+      rows = Tabula.get_rows(text_elements, true)
       res['Content-Type'] = 'application/json'
       res.write rows.to_json
 
@@ -172,7 +170,7 @@ Cuba.define do
 #      require 'debugger'; debugger
 #      ct = graph.cluster_together(graph.edges[graph.edges.keys.first].first, nil, nil)
 
-      puts graph.edges.inject([]) { |a, (k, v)| puts v.class.inspect; a + v }
+      puts graph.edges.inject([]) { |a, (k, v)| a = a + v }
         .uniq
         .select { |a| graph.cluster_together(a, nil, nil) }
         .each { |e| puts "#{e.from.text.inspect} <-> #{e.to.text.inspect}"}
@@ -211,11 +209,7 @@ Cuba.define do
       run_mupdfdraw(File.join(file_path, 'document.pdf'), file_path, 2048) # 2048 width
 
 
-      if Settings::USE_JRUBY_ANALYZER
         run_jrubypdftohtml(File.join(file_path, 'document.pdf'), file_path)
-      else
-        run_pdftohtml(File.join(file_path, 'document.pdf'), file_path)
-      end
 
 
       res.redirect "/pdf/#{file_id}"

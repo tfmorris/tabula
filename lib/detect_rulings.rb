@@ -77,6 +77,7 @@ module Tabula
       # stitch rulings ("tips" are close enough)
       # delete lines that don't look like rulings (TODO: define rulingness)
 
+      return rulings
       horiz = rulings.select(&:horizontal?).sort_by(&:top)
       ruling1 = horiz.first
       current_line_index = i = 0
@@ -146,11 +147,11 @@ module Tabula
       mat_canny = mat.canny(1, 50, 3)
 
       lines = mat_canny.hough_lines(:probabilistic,
-                                    1,
-                                    (Math::PI/180) * 45,
-                                    200,
-                                    200,
-                                    10)
+                                    45,
+                                    (Math::PI/180.0),
+                                    150,#200,
+                                    50,#200,
+                                    40)
 
       lines = lines.to_a
 

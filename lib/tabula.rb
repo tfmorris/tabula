@@ -406,10 +406,10 @@ module Tabula
       ze = ZoneEntity.new(te.top, te.left, te.width, te.height)
       if row.nil?
         bins << ze
-        ze.texts << te.text
+        ze.texts << te
       else
         row.merge!(ze)
-        row.texts << te.text
+        row.texts << te
       end
     end
     bins
@@ -501,7 +501,7 @@ module Tabula
       next if lines[i].nil?
       # if any of the elements on the next line is duplicated, kill
       # the next line
-      if (0..lines[i].text_elements.size-1).any? { |j| lines[i].text_elements[j] == lines[i+1].text_elements[j] }
+      if (0..lines[i].texts.size-1).any? { |j| lines[i].texts[j] == lines[i+1].texts[j] }
         lines[i+1] = nil
       end
     end
