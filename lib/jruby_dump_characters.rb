@@ -5,7 +5,9 @@ require 'java'
 java_import org.apache.pdfbox.pdfparser.PDFParser
 java_import org.apache.pdfbox.pdmodel.PDDocument
 java_import org.apache.pdfbox.util.PDFTextStripper
+java_import org.apache.pdfbox.util.PDFStreamEngine
 java_import org.apache.pdfbox.pdfviewer.PageDrawer
+java_import org.apache.pdfbox.util.operator.OperatorProcessor
 
 java_import java.awt.image.BufferedImage
 java_import java.awt.Color
@@ -18,6 +20,27 @@ $current_page = 0
 $fonts = Hash.new({})
 $page_fonts = Hash.new({})
 
+module Java::OrgApachePdfboxUtil
+  class PDFStreamEngine
+    field_accessor :operators
+  end
+end
+
+class DummyOperatorProcessor < org.apache.pdfbox.util.operator.OperatorProcessor
+
+  attr_accessor :operator
+
+  def initialize(operator)
+    super()
+    self.operator = operator
+  end
+
+  def process(operator, arguments)
+    puts "process: #{self.operator.inspect} - #{arguments.inspect}"
+  end
+
+end
+
 
 class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
 
@@ -28,6 +51,14 @@ class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
     self.fonts = {}
     self.contents = ''
     self.setSortByPosition(true)
+
+#    require 'ruby-debug'; debugger
+
+    registerOperatorProcessor('re', DummyOperatorProcessor.new('re'))
+    registerOperatorProcessor('l', DummyOperatorProcessor.new('l'))
+
+    puts 'a'
+
   end
 
   def clear!
