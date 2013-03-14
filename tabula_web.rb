@@ -101,6 +101,23 @@ Cuba.define do
 
     end
 
+    on "pdf/:file_id/graphics" do |file_id|
+
+      xml = File.open(File.join(Dir.pwd, "static/pdfs/#{file_id}/page_#{req.params['page']}_graphics.xml")) { |f|
+        Nokogiri::XML(f)
+      }
+      graphic_elements = xml.xpath("//*[name()='RectSegment' or name() = 'LineSegment']")
+
+      lines = []; rects = []
+      graphic_elements.each do |g|
+        (g.name == 'RectSegment' ? rects : lines) << g.attributes.inject({}) { |h, (k,v)| h[k] = v.value; h }
+      end
+
+      res['Content-Type'] = 'application/json'
+      res.write({ :lines => lines, :rects => rects }.to_json)
+
+    end
+
     on "pdf/:file_id/columns" do |file_id|
       text_elements = get_text_elements(file_id,
                                         req.params['page'],
