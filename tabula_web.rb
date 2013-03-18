@@ -6,23 +6,27 @@ require 'nokogiri'
 require 'digest/sha1'
 require 'json'
 require 'csv'
+require 'resque'
+require 'resque/status_server'
+require 'resque/job_with_status'
 
 require './lib/detect_rulings.rb'
 require './lib/tabula.rb'
 require './lib/tabula_graph.rb'
+require './lib/jobs/analyze_pdf.rb'
+require './lib/jobs/generate_thumbails.rb'
 require './local_settings.rb'
 
 Cuba.plugin Cuba::Render
 Cuba.use Rack::Static, root: "static", urls: ["/css","/js", "/img", "/pdfs", "/scripts", "/swf"]
 
+########## PDF handling internal utils ##########
+# TODO: move out of this file?
+
 def run_pdftohtml(file, output_dir)
   `#{Settings::PDFTOHTML_PATH} -xml #{file} #{File.join(output_dir, 'document.xml')}`
 end
 
-def run_jrubypdftohtml(file, output_dir)
-  system({"CLASSPATH" => "lib/jars/fontbox-1.7.1.jar:lib/jars/pdfbox-1.7.1.jar:lib/jars/commons-logging-1.1.1.jar:lib/jars/jempbox-1.7.1.jar"},
-         "#{Settings::JRUBY_PATH} --1.9 --server lib/jruby_dump_characters.rb #{file} #{output_dir}")
-end
 
 def run_mupdfdraw(file, output_dir, width=560, page=nil)
 
@@ -58,6 +62,9 @@ def get_text_elements(file_id, page, x1, y1, x2, y2)
   }
 end
 
+
+########## Web ##########
+
 Cuba.define do
 
   on get do
@@ -74,6 +81,7 @@ Cuba.define do
                                         req.params['x2'],
                                         req.params['y2'])
 
+#      text_elements = Tabula.merge_words(text_elements)
       whitespace =  Tabula.find_whitespace(text_elements,
                                            Tabula::ZoneEntity.new(req.params['y1'].to_f,
                                                                   req.params['x1'].to_f,
@@ -95,16 +103,6 @@ Cuba.define do
                                         req.params['y2'])
 
       table = Tabula.make_table(text_elements)
-
-
-      # merged = Tabula.merge_words(text_elements)
-      # whitespace = Tabula.find_whitespace(merged,
-      #                                     Tabula::ZoneEntity.new(req.params['y1'].to_f,
-      #                                                            req.params['x1'].to_f,
-      #                                                            req.params['x2'].to_f - req.params['x1'].to_f,
-      #                                                            req.params['y2'].to_f - req.params['y1'].to_f))
-
-      # puts whitespace.inspect
 
       if req.params['split_multiline_cells'] == 'true'
         table = Tabula.merge_multiline_cells(table)
@@ -235,7 +233,49 @@ Cuba.define do
                        })
       end
     end
-  end
+
+    on "queue/:upload_id/json" do |upload_id|
+      # upload_id is the "job id" uuid that resque-status provides
+      status = Resque::Plugins::Status::Hash.get(upload_id)
+      res['Content-Type'] = 'application/json'
+      message = {}
+      if status.nil?
+        res.status = 404
+        message[:status] = "error"
+        message[:message] = "No such job"
+        message[:pct_complete] = 0
+      elsif status.failed?
+        message[:status] = "error"
+        message[:message] = "Sorry, your file upload could not be processed. Please double-check that the file you uploaded is a valid PDF file and try again."
+        message[:pct_complete] = 99
+        res.write message.to_json
+      else
+        message[:status] = status.status
+        message[:message] = status.message
+        message[:pct_complete] = status.pct_complete
+        message[:thumbnails_complete] = status['thumbnails_complete']
+        message[:file_id] = status['file_id']
+        message[:upload_id] = status['upload_id']
+        res.write message.to_json
+      end
+    end
+
+    on "queue/:upload_id" do |upload_id|
+      # upload_id is the "job id" uuid that resque-status provides
+      status = Resque::Plugins::Status::Hash.get(upload_id)
+      if status.nil?
+        res.status = 404
+        res.write ""
+        res.write view("upload_error.html",
+            :message => "invalid upload_id (TODO: make this generic 404)")
+      elsif status.failed?
+        res.write view("upload_error.html",
+            :message => "Sorry, your file upload could not be processed. Please double-check that the file you uploaded is a valid PDF file and try again.")
+      else
+        res.write view("upload_status.html", :status => status, :upload_id => upload_id)
+      end
+    end
+  end # /get
 
   on post do
     on 'upload' do
@@ -245,13 +285,35 @@ Cuba.define do
       FileUtils.cp(req.params['file'][:tempfile].path,
                    File.join(file_path, 'document.pdf'))
 
-      run_mupdfdraw(File.join(file_path, 'document.pdf'), file_path) # 560 width
-      run_mupdfdraw(File.join(file_path, 'document.pdf'), file_path, 2048) # 2048 width
+      file = File.join(file_path, 'document.pdf')
 
-
-      run_jrubypdftohtml(File.join(file_path, 'document.pdf'), file_path)
-
-      res.redirect "/pdf/#{file_id}"
+      # Make sure this is a PDF.
+      # TODO: cleaner way to do this without blindly relying on file extension (which we provided)?
+      mime = `file -b --mime-type #{file}`
+      if !mime.include? "application/pdf"
+        res.write view("upload_error.html",
+            :message => "Sorry, the file you uploaded was not detected as a PDF. You must upload a PDF file. <a href='/'>Please try again</a>.")
+      else
+        # fire off thumbnail jobs
+        sm_thumbnail_job = GenerateThumbnailJob.create(
+          :file => file,
+          :output_dir => file_path,
+          :thumbnail_size => 560
+        )
+        lg_thumbnail_job = GenerateThumbnailJob.create(
+          :file => file,
+          :output_dir => file_path,
+          :thumbnail_size => 2048
+        )
+        upload_id = AnalyzePDFJob.create(
+          :file_id => file_id,
+          :file => file,
+          :output_dir => file_path,
+          :sm_thumbnail_job => sm_thumbnail_job,
+          :lg_thumbnail_job => lg_thumbnail_job
+        )
+        res.redirect "/queue/#{upload_id}"
+      end
     end
   end
 

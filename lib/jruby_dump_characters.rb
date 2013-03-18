@@ -17,6 +17,8 @@ java_import java.awt.geom.Rectangle2D
 
 import java.awt.geom.GeneralPath
 
+PRINTABLE_RE = /[[:print:]]/
+
 # java_import java.io.File
 
 # TODO: reuse Tabula::ZoneEntity
@@ -178,6 +180,8 @@ class DummyOperatorProcessor < org.apache.pdfbox.util.operator.OperatorProcessor
 end
 
 
+
+
 class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
 
   attr_accessor :contents, :fonts
@@ -335,10 +339,11 @@ class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
 
     #    $page_contents[$current_page] += "  <text top=\"%.2f\" left=\"%.2f\" width=\"%.2f\" height=\"%.2f\" font=\"#{font_plus_size}\" dir=\"#{text.getDir}\">#{text.getCharacter}</text>\n" % [text.getYDirAdj - text.getHeightDir, text.getXDirAdj, text.getWidthDirAdj, text.getHeightDir]
 
-    self.contents += "  <text top=\"%.2f\" left=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fontsize=\"%.2f\" dir=\"%s\"><![CDATA[%s]]></text>\n" % [text.getYDirAdj - text.getHeightDir, text.getXDirAdj, text.getWidthDirAdj, text.getHeightDir, text.getFontSize, text.getDir, text.getCharacter]
-
+    c = text.getCharacter
+    if c =~ PRINTABLE_RE  # probably not the fastest way of detecting printable chars
+      self.contents += "  <text top=\"%.2f\" left=\"%.2f\" width=\"%.2f\" height=\"%.2f\" fontsize=\"%.2f\" dir=\"%s\"><![CDATA[%s]]></text>\n" % [text.getYDirAdj, text.getXDirAdj, text.getWidthDirAdj, text.getHeightDir, text.getFontSize, text.getDir, text.getCharacter]
+    end
   end
-
 end
 
 
@@ -392,7 +397,7 @@ def print_text_locations(pdf_file_name, output_directory)
 
     index_file.puts page_tag + "/> "
 
-    STDERR.puts "converted #{i+1}/#{all_pages.size}"
+    STDERR.puts "#{i+1}///#{all_pages.size}"
 
   end
 

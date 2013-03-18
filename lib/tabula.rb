@@ -264,15 +264,13 @@ module Tabula
     end
   end
 
-  def Tabula.get_rows(text_elements, merge_words=false)
+  def Tabula.get_rows(text_elements, merge_words=true)
     text_elements = Tabula.merge_words(text_elements) if merge_words
     hg = Tabula.row_histogram(text_elements)
     hg.sort_by(&:top).map { |r| {'top' => r.top, 'bottom' => r.bottom, 'text' => r.texts} }
-
   end
 
   def Tabula.make_table(text_elements, merge_words=true, split_multiline_cells=false)
-
     text_elements = Tabula.merge_words(text_elements)
 
     # group by lines
@@ -283,7 +281,7 @@ module Tabula
       text_elements.find_all { |te|
         te.vertically_overlaps?(lb) } \
         .sort_by(&:left).each { |te| line << te }
-      lines << line
+      lines << line if line.text_elements.size > 0
     }
     lines.sort_by!(&:top)
 
@@ -300,7 +298,6 @@ module Tabula
       # l.text_elements = Tabula.merge_words(l.text_elements)
 
       next unless l.text_elements.size < columns.size
-
 
       columns.sort_by(&:left).each_with_index do |c, i|
         if (i > l.text_elements.size - 1) or !l.text_elements(&:left)[i].nil? and !c.text_elements.include?(l.text_elements[i])
@@ -400,15 +397,15 @@ module Tabula
     distances = (1..lines.size - 1).map { |i| lines[i].bottom - lines[i-1].bottom }
     avg_distance = distances.inject(0) { |sum, el| sum + el } / distances.size.to_f
     stddev_distance = Math.sqrt(distances.inject(0) { |variance, x| variance += (x - avg_distance) ** 2 } / (distances.size - 1).to_f)
-    puts "distances: #{distances.inspect}"
-    puts "avg_distance: #{avg_distance}"
-    puts "stddev_distance: #{stddev_distance}"
+    #puts "distances: #{distances.inspect}"
+    #puts "avg_distance: #{avg_distance}"
+    #puts "stddev_distance: #{stddev_distance}"
 
     i = 1
     cur_line = lines[0]
     while i < lines.size
       dist = cur_line.vertical_distance(lines[i])
-      puts "dist: #{dist}"
+      #puts "dist: #{dist}"
       if dist < avg_distance
         cur_line.text_elements.each_with_index { |te, j|
           cur_line.text_elements[j].merge! lines[i].text_elements[j]
@@ -418,11 +415,11 @@ module Tabula
       else
         cur_line = lines[i]
       end
-      puts cur_line.text_elements.map(&:text).inspect
+      #puts cur_line.text_elements.map(&:text).inspect
       i += 1
     end
-    puts '----------------------------------------'
-    puts;     puts;     puts;     puts;     puts;
+    #puts '----------------------------------------'
+    #puts;     puts;     puts;     puts;     puts;
     lines.compact
   end
 
