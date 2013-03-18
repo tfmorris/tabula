@@ -1,4 +1,4 @@
-# VERpY DIRTY SCRIPT
+# VERY DIRTY SCRIPT
 # TODO refactor. we should get rid of the XML intermediate step, anyway.
 require 'java'
 
@@ -13,14 +13,14 @@ java_import java.awt.image.BufferedImage
 java_import java.awt.Color
 java_import java.awt.geom.PathIterator
 java_import java.awt.geom.Point2D
+java_import java.awt.geom.Rectangle2D
 
 import java.awt.geom.GeneralPath
 
 # java_import java.io.File
 
-
 # TODO: reuse Tabula::ZoneEntity
-class LineSegment < Struct.new(:x1, :y1, :x2, :y2, :color)
+class GenericSegment < Struct.new(:x1, :y1, :x2, :y2)
   alias_method :lower_left_x, :x1
   alias_method :lower_left_y, :y1
   alias_method :upper_right_x, :x2
@@ -28,7 +28,6 @@ class LineSegment < Struct.new(:x1, :y1, :x2, :y2, :color)
 
   def initialize(*args)
     super(*args)
-
     # correct negative dimensions
     if self.x1 > self.x2
       temp = self.x1
@@ -39,39 +38,63 @@ class LineSegment < Struct.new(:x1, :y1, :x2, :y2, :color)
     if self.y1 > self.y2
       temp = self.y1
       self.y1 = self.y2
-      self.y2 = self.temp
+      self.y2 = temp
     end
+  end
+
+  def to_xml
+    attrs = [:x1, :x2, :y1, :y2].map { |k|
+      "#{k.to_s}=\"#{self.send(k)}\""
+    }.join(' ')
+    "<#{self.class} #{attrs} />"
   end
 
   def rotate(*args)
     if args.size == 3
+
       pointX, pointY, amount = args
 
-      px1 = x1 - pointX, px2 = x2 - pointX
-      py1 = y1 - pointY, py2 = y2 - pointY
+      px1 = self.x1 - pointX; px2 = self.x2 - pointX
+      py1 = self.y1 - pointY; py2 = self.y2 - pointY
 
       if (amount == 90 || amount == -270)
-          x1 = pointX - py2; x2 = pointX - py1;
-          y1 = pointY + px1; y2 = pointY + px2;
+        self.x1 = pointX - py2; self.x2 = pointX - py1;
+        self.y1 = pointY + px1; y2 = pointY + px2;
       elsif (amount == 270 || amount == -90)
-            x1 = pointX + py1; x2 = pointX + py2;
-            y1 = pointY - px2; y2 = pointY - px1;
+        self.x1 = pointX + py1; self.x2 = pointX + py2;
+        self.y1 = pointY - px2; self.y2 = pointY - px1;
       end
     elsif args.size == 1
       page = args.first
       mediaBox = page.getMediaBox
       if !page.getRotation.nil?
-          rotate(mediaBox.getLowerLeftX, mediaBox.getLowerLeftY, page.getRotation);
-          if (page.getRotation == 90 || page.getRotation == -270)
-              x1 = x1 + mediaBox.getHeight();
-              x2 = x2 + mediaBox.getHeight();
-          elsif (page.getRotation() == 270 || page.getRotation() == -90)
-                y1 = y1 + mediaBox.getWidth();
-                y2 = y2 + mediaBox.getWidth();
-          end
+        # if self.class.to_s == 'RectSegment'
+        #   require 'ruby-debug'; debugger
+        # end
+        rotate(mediaBox.getLowerLeftX, mediaBox.getLowerLeftY, page.getRotation);
+        if (page.getRotation == 90 || page.getRotation == -270)
+          self.x1 = x1 + mediaBox.getHeight();
+          self.x2 = x2 + mediaBox.getHeight();
+        elsif (page.getRotation() == 270 || page.getRotation() == -90)
+          self.y1 = y1 + mediaBox.getWidth();
+          self.y2 = y2 + mediaBox.getWidth();
+        end
       end
     end
   end
+end
+
+class LineSegment < GenericSegment
+end
+
+class RectSegment < GenericSegment
+
+  ##
+  # returns an array of the component lines of this rectangle
+  def to_lines
+    raise "TODO: Not Implemented!"
+  end
+
 end
 
 $page_contents = []
@@ -114,6 +137,30 @@ class LineToOperator < org.apache.pdfbox.util.operator.OperatorProcessor
   end
 end
 
+# usually, ruling lines in tables are thin rectangles
+# hence the need to scan for rectangles
+class AppendRectangleToPathOperator < org.apache.pdfbox.util.operator.OperatorProcessor
+  def process(operator, arguments)
+    drawer = self.context
+    x, y, w, h = arguments.to_array
+    finalX, finalY, finalW, finalH = x.floatValue, y.floatValue, w.floatValue, h.floatValue
+    ppos = drawer.TransformedPoint(finalX, finalY)
+    psize = drawer.ScaledPoint(finalW, finalH)
+
+    finalY = ppos.getY - psize.getY
+    if finalY < 0
+      finalY = 0
+    end
+
+    rect = java.awt.geom.Rectangle2D::Double.new(ppos.getX, finalY, psize.getX, psize.getY)
+    drawer.linePath.reset
+    drawer.linePath.append(rect, false)
+
+    drawer.new_path!
+    drawer.simple_add_rect!(ppos.get_x, finalY, psize.getX, psize.getY)
+  end
+end
+
 
 class DummyOperatorProcessor < org.apache.pdfbox.util.operator.OperatorProcessor
 
@@ -135,14 +182,22 @@ class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
 
   attr_accessor :contents, :fonts
   attr_accessor :lineSubPaths, :linePath, :lineList, :rectList, :currentLines, :currentRects, :linesToAdd,  :rectsToAdd, :strokingColor
+  attr_accessor :newPath, :pathContainsCurve, :pathBeginSet, :pathClosed
   attr_accessor :currentX, :currentY
 
   def initialize
     super
+    self.setSortByPosition(true)
+    self.clear!
+
+    registerOperatorProcessor('m', MoveToOperator.new)
+    registerOperatorProcessor('re', AppendRectangleToPathOperator.new)
+    registerOperatorProcessor('l', LineToOperator.new)
+  end
+
+  def clear!
     self.fonts = {}
     self.contents = ''
-    self.setSortByPosition(true)
-
     self.lineSubPaths = []
     self.linePath = java.awt.geom.GeneralPath.new
     self.lineList = []
@@ -151,15 +206,19 @@ class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
     self.currentRects = []
     self.linesToAdd = []
     self.rectsToAdd = []
+    self.newPath = false
     self.currentX = -1; self.currentY = -1
-
-    registerOperatorProcessor('m', MoveToOperator.new)
-    registerOperatorProcessor('re', DummyOperatorProcessor.new('re'))
-    registerOperatorProcessor('l', LineToOperator.new)
   end
 
-  def clear!
-    self.contents = ''; self.fonts = {}
+  def new_path!
+    self.linesToAdd += currentLines
+    self.rectsToAdd += currentRects
+    self.newPath = true
+    self.pathContainsCurve = false
+    self.pathBeginSet = false
+    self.pathClosed = false
+    self.currentLines = []
+    self.currentRects = []
   end
 
   def simple_move_to!(x, y)
@@ -172,11 +231,23 @@ class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
     # comp = strokingColor.getRGBColorComponents(nil)
     pto = self.TransformedPoint(x, y)
 
-    newLine = LineSegment.new(currentX, currentY, pto.getX, pto.getY, nil)
+    newLine = LineSegment.new(currentX, currentY, pto.getX, pto.getY)
     newLine.rotate(self.page)
     self.linesToAdd << newLine
     self.currentX = pto.getX; self.currentY = pto.getY
     puts "line from: (#{newLine.x1}, #{newLine.y1}) -> (#{newLine.x2}, #{newLine.y2})"
+  end
+
+  def simple_add_rect!(x, y, w, h)
+    # TODO include color
+    # comp = getStrokingColor.getRGBColorComponents(nil)
+    newRect = RectSegment.new(x, x+w, y, y+h)
+    newRect.rotate(self.page)
+    self.rectsToAdd << newRect
+    self.currentX = x
+    self.currentY = y
+    #puts "rectangle (#{newRect.x1}, #{newRect.y1}) -> (#{newRect.x2}, #{newRect.y2})"
+    puts newRect.to_xml
   end
 
   ##
@@ -191,7 +262,18 @@ class TextExtractor < org.apache.pdfbox.util.PDFTextStripper
     pageSize.getHeight - y
   end
 
-  def ScaledPoint(x,y, scaleX, scaleY)
+  def ScaledPoint(*args)
+    x, y = args[0], args[1]
+
+    # if scale factor not provided, get it from current transformation matrix
+    if args.size == 2
+      ctm = getGraphicsState.getCurrentTransformationMatrix
+      at = ctm.createAffineTransform
+      scaleX = at.getScaleX; scaleY = at.getScaleY
+    else
+      scaleX = args[2]; scaleY = args[3]
+    end
+
     finalX = 0.0;
     finalY = 0.0;
 
@@ -297,6 +379,16 @@ def print_text_locations(pdf_file_name, output_directory)
     outfile.puts "</page>"
     outfile.puts "</pdf2xml>"
     outfile.close
+
+    # graphic elements (lines and rects)
+    # TODO refactor this
+    outfile = File.new(output_directory + "/page_#{i + 1}_graphics.xml", 'w')
+    outfile.puts preamble
+    outfile.puts page_tag + ">"
+    (extractor.linesToAdd + extractor.rectsToAdd).each do |s|
+      outfile.puts s.to_xml
+    end
+    outfile.puts "</page></pdf2xml>"
 
     index_file.puts page_tag + "/> "
 
