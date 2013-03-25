@@ -2,6 +2,7 @@
 
 var clip = null;
 
+/* Use ZeroClipboard to allow copying CSV data to clipboard. Bind it here. */
 $(document).ready(function() {
     ZeroClipboard.setMoviePath('/swf/ZeroClipboard.swf');
     clip = new ZeroClipboard.Client();
@@ -351,6 +352,56 @@ $(function () {
               });
     };
 
+    $('img.page-image').boxer({
+    	stop: function(event, ui) {
+            if (ui.box.width() == 0 && ui.box.height() == 0) {
+                $('#thumb-' + $(this).attr('id') + ' .selection-show').css('display', 'none');
+            }
+            if (ui.box.height() * ui.box.width() < 5000) return;
+            lastSelection = ui.box;
+            var thumb_width = $(this).width();
+            var thumb_height = $(this).height();
+
+            var pdf_width = parseInt($(this).data('original-width'));
+            var pdf_height = parseInt($(this).data('original-height'));
+            var pdf_rotation = parseInt($(this).data('rotation'));
+
+            // if rotated, swap width and height
+            if (pdf_rotation == 90 || pdf_rotation == 270) {
+                var tmp = pdf_height;
+                pdf_height = pdf_width;
+                pdf_width = tmp;
+            }
+            // var tmp;
+            // switch(pdf_rotation) {
+            // case 180:
+            //     console.log('180 carajo!');
+            //     tmp = selection.x1; selection.x1 = selection.x2; selection.x2 = tmp;
+            //     tmp = selection.y1; selection.y1 = selection.y2; selection.y2 = tmp;
+            // }
+
+            var scale = (pdf_width / thumb_width);
+
+		    var offset = ui.box.offset();
+
+            // TODO: this part is totally broken
+            console.log("x1: " + offset.left * scale);
+            console.log("x2: " + (offset.left + ui.box.width()) * scale);
+            console.log("y1: " + offset.top * scale);
+            console.log("y2: " + (offset.top + ui.box.height()) * scale);
+            var query_parameters = {
+                x1: offset.left * scale,
+                x2: (offset.left + ui.box.width()) * scale,
+                y1: offset.top * scale,
+                y2: (offset.top + ui.box.height()) * scale,
+                page: $(this).data('page')
+            };
+
+            doQuery(PDF_ID, query_parameters);
+        }
+    });
+    /* OLD SELECTION CODE */
+    /*
     $('img.page-image').imgAreaSelect({
         handles: true,
         //minHeight: 50, minWidth: 100,
@@ -395,6 +446,10 @@ $(function () {
 
             var scale = (pdf_width / thumb_width);
 
+            console.log("x1: " + selection.x1 * scale);
+            console.log("x2: " + selection.x2 * scale);
+            console.log("y1: " + selection.y1 * scale);
+            console.log("y2: " + selection.y2 * scale);
             var query_parameters = {
                 x1: selection.x1 * scale,
                 x2: selection.x2 * scale,
@@ -404,6 +459,8 @@ $(function () {
             };
 
             doQuery(PDF_ID, query_parameters);
-        }});
+        }
+    });
+    */
 
 });
