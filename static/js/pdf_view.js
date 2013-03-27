@@ -352,8 +352,11 @@ $(function () {
               });
     };
 
-    $('img.page-image').boxer({
-    	stop: function(event, ui) {
+    $('.page').boxer({
+        stop: function(event, ui) {
+            var pagediv = $(this);
+            var page = $("img.page-image", this);
+
             if (ui.box.width() == 0 && ui.box.height() == 0) {
                 $('#thumb-' + $(this).attr('id') + ' .selection-show').css('display', 'none');
             }
@@ -362,9 +365,9 @@ $(function () {
             var thumb_width = $(this).width();
             var thumb_height = $(this).height();
 
-            var pdf_width = parseInt($(this).data('original-width'));
-            var pdf_height = parseInt($(this).data('original-height'));
-            var pdf_rotation = parseInt($(this).data('rotation'));
+            var pdf_width = parseInt(page.data('original-width'));
+            var pdf_height = parseInt(page.data('original-height'));
+            var pdf_rotation = parseInt(page.data('rotation'));
 
             // if rotated, swap width and height
             if (pdf_rotation == 90 || pdf_rotation == 270) {
@@ -380,22 +383,29 @@ $(function () {
             //     tmp = selection.y1; selection.y1 = selection.y2; selection.y2 = tmp;
             // }
 
+            /**********/
+            // TODO: this part is totally broken
             var scale = (pdf_width / thumb_width);
+
+            console.log("pdf_width: " + pdf_width);
+            console.log("thumb_width: " + thumb_width);
+            console.log("scale: " + scale);
 
 		    var offset = ui.box.offset();
 
-            // TODO: this part is totally broken
             console.log("x1: " + offset.left * scale);
             console.log("x2: " + (offset.left + ui.box.width()) * scale);
             console.log("y1: " + offset.top * scale);
             console.log("y2: " + (offset.top + ui.box.height()) * scale);
+            console.log("page: " + page.data('page'));
             var query_parameters = {
                 x1: offset.left * scale,
                 x2: (offset.left + ui.box.width()) * scale,
                 y1: offset.top * scale,
                 y2: (offset.top + ui.box.height()) * scale,
-                page: $(this).data('page')
+                page: page.data('page')
             };
+            /**********/
 
             doQuery(PDF_ID, query_parameters);
         }
