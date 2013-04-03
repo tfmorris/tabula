@@ -139,6 +139,10 @@ Cuba.define do
 
   on post do
     on 'upload' do
+
+      # WE DON'T ALLOW UPLOADS IN THE RESTRICTED DEMO
+      raise "No, sir. I don't like it!'"
+
       file_id = Digest::SHA1.hexdigest(Time.now.to_s)
       file_path = File.join(Settings::DOCUMENTS_BASEPATH, file_id)
       FileUtils.mkdir(file_path)
