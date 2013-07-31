@@ -1,0 +1,175 @@
+.sidebar-nav {
+    height: 85% !important;
+    overflow: auto !important;
+}
+
+.flip {
+  -moz-transform: scaleX(-1);
+  -o-transform: scaleX(-1);
+  -webkit-transform: scaleX(-1);
+  transform: scaleX(-1);
+  filter: FlipH;
+  -ms-filter: "FlipH";
+}
+
+.thumbnail-list {
+    margin-left: 0;
+    list-style-type: none;
+}
+
+
+  .thumbnail-list li {
+      margin: 5px;
+      text-align: center;
+      margin-bottom: 15px;
+      display: block;
+      position: relative;
+      top: 0; left: 0;
+  }
+
+  .thumbnail-list li span {
+    visibility: hidden;
+    width: 100px !important;
+    position: relative;
+  }
+
+  .thumbnail-list li span i {
+    opacity: 0.3;
+    position: relative;
+  }
+
+  .thumbnail-list li:hover span {
+    visibility: visible;
+  }
+
+  .thumbnail-list li:hover span i:hover {
+    opacity: 1;
+  }
+
+  .thumbnail-list li:hover {
+      cursor: pointer;
+      background-color: #ddd;
+  }
+
+    .thumbnail-list li img {
+        display: block; 
+        position: relative; top: 0; left: 0;
+    }
+
+    .thumbnail-list li div.selection-show {
+        position: absolute;
+        border: 1px dashed red;
+        display: none;
+    }
+
+img.page-image {
+    border: 1px solid #888888;
+    margin-bottom: 16px;
+    display: block;
+    display: inline-block;
+}
+
+#myModal .modal-body {
+    overflow: auto;
+}
+
+#myModal {
+    width: 800px;
+    margin: -170px 0 0 -400px;
+    max-height: 500px;
+}
+
+.modal.fade.in {
+    top: 30% !important;
+}
+
+.modal-body table, .modal-body table:focus {
+    outline: 0px solid transparent;
+}
+
+.modal-body td:hover {
+    background-color: #cccccc;
+}
+
+.debug-canvas {
+    position: absolute;
+    z-index: 1000;
+}
+
+#loading {
+    position: fixed;
+    visibility: hidden;
+    top: 51px;
+    width: 40px;
+    left: 1058px;
+}
+
+ul#uploadedfiles {
+  min-height: 100px;
+  max-height: 200px;
+  overflow: auto;
+  margin: 0;
+}
+
+ul#uploadedfiles li span {
+  font-size: 70%;
+  color: #ddd;
+}
+
+ul#uploadedfiles li button {
+  border: 0;
+  background-color: transparent;
+  visibility: hidden;
+  margin-left: 5px;
+  opacity: 0.7;
+}
+
+
+ul#uploadedfiles li:hover button {
+  visibility: visible;
+}
+
+
+
+.followyouaroundbar button{
+  margin-bottom: 5px;
+}
+.followyouaroundbar label#multiselect-label{
+  display: inline;
+}
+label#use-lines-label{
+  display: inline;
+}
+form#download-form{
+  margin: 0px;
+}
+form#download-form input.linklike{
+  border: none;
+  width: 100%;
+  text-align: right;
+  background: none;
+}
+form#download-form input.linklike:hover{
+  color: #fff;
+  text-decoration: none;
+  background-color: #0081c2;
+  background-image: -moz-linear-gradient(top,#08c,#0077b3);
+  background-image: -webkit-gradient(linear,0 0,0 100%,from(#08c),to(#0077b3));
+  background-image: -webkit-linear-gradient(top,#08c,#0077b3);
+  background-image: -o-linear-gradient(top,#08c,#0077b3);
+  background-image: linear-gradient(to bottom,#08c,#0077b3);
+  background-repeat: repeat-x;
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#ff0088cc',endColorstr='#ff0077b3',GradientType=0);
+}
+
+a#chardin-help{
+  font-size: 16px;
+  text-decoration: underline;
+  color: blue;
+}
+
+div.explanation-label {
+  padding: 6px 15px 10px 15px;
+  color: #888;
+  font-size: 85%;
+}
